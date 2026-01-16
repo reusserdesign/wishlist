@@ -4,6 +4,7 @@ namespace verbb\wishlist\elements;
 use verbb\wishlist\Wishlist;
 use verbb\wishlist\elements\db\ItemQuery;
 use verbb\wishlist\elements\db\ListQuery;
+use verbb\wishlist\helpers\ReusserFeatures;
 use verbb\wishlist\helpers\UrlHelper;
 use verbb\wishlist\models\ListType;
 use verbb\wishlist\records\ListRecord;
@@ -120,7 +121,7 @@ class ListElement extends Element
 
     protected static function defineTableAttributes(): array
     {
-        return [
+        $attributes = [
             'title' => ['label' => Craft::t('app', 'Title')],
             'type' => ['label' => Craft::t('wishlist', 'List Type')],
             'owner' => ['label' => Craft::t('wishlist', 'Owner')],
@@ -129,6 +130,18 @@ class ListElement extends Element
             'dateCreated' => ['label' => Craft::t('app', 'Date Created')],
             'dateUpdated' => ['label' => Craft::t('app', 'Date Updated')],
         ];
+
+        // Reusser enhanced columns (feature-flagged)
+        if (ReusserFeatures::enhancedListView()) {
+            $attributes['quoteEmail'] = ['label' => Craft::t('wishlist', 'Customer Email')];
+            $attributes['quoteName'] = ['label' => Craft::t('wishlist', 'Customer Name')];
+            $attributes['quoteStatus'] = ['label' => Craft::t('wishlist', 'Quote Status')];
+            $attributes['quoteExpirationDate'] = ['label' => Craft::t('wishlist', 'Expiration Date')];
+            $attributes['itemCount'] = ['label' => Craft::t('wishlist', 'Item Count')];
+            $attributes['itemSkus'] = ['label' => Craft::t('wishlist', 'SKUs')];
+        }
+
+        return $attributes;
     }
 
     protected static function defineDefaultTableAttributes(string $source): array
@@ -137,6 +150,15 @@ class ListElement extends Element
 
         if ($source === '*') {
             $attributes[] = 'type';
+        }
+
+        // Add Reusser defaults when feature enabled
+        if (ReusserFeatures::enhancedListView()) {
+            $attributes[] = 'quoteName';
+            $attributes[] = 'quoteEmail';
+            $attributes[] = 'quoteStatus';
+            $attributes[] = 'itemCount';
+            $attributes[] = 'itemSkus';
         }
 
         return $attributes;
@@ -493,6 +515,54 @@ class ListElement extends Element
             return '';
         } else if ($attribute == 'items') {
             return count($this->getItems());
+        }
+
+        // Reusser enhanced attributes (feature-flagged)
+        if (ReusserFeatures::enhancedListView()) {
+            try {
+                switch ($attribute) {
+                    case 'quoteEmail':
+                        return $this->getFieldValue('quoteEmail') ?? '';
+
+                    case 'quoteName':
+                        return $this->getFieldValue('quoteName') ?? '';
+
+                    case 'quoteStatus':
+                        $status = $this->getFieldValue('quoteStatus');
+                        if (!$status) {
+                            return '';
+                        }
+                        $label = is_object($status) && isset($status->label) ? $status->label : (string)$status;
+                        $value = is_object($status) && isset($status->value) ? $status->value : strtolower($label);
+                        $color = match($value) {
+                            'approved' => 'green',
+                            'denied' => 'red',
+                            'pending' => 'orange',
+                            default => 'gray'
+                        };
+                        return "<span class='status {$color}'></span> {$label}";
+
+                    case 'quoteExpirationDate':
+                        $date = $this->getFieldValue('quoteExpirationDate');
+                        return $date ? $date->format('M j, Y') : '';
+
+                    case 'itemCount':
+                        return (string)count($this->getItems());
+
+                    case 'itemSkus':
+                        $skus = [];
+                        foreach ($this->getItems() as $item) {
+                            $element = $item->getElement();
+                            if ($element && !empty($element->sku)) {
+                                $skus[] = $element->sku;
+                            }
+                        }
+                        return implode(', ', $skus);
+                }
+            } catch (\Exception $e) {
+                // Field may not exist on this list type
+                return '';
+            }
         }
 
         return parent::attributeHtml($attribute);

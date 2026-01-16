@@ -177,9 +177,6 @@ class ItemsController extends BaseController
                     continue;
                 }
 
-                // Check if we're allowed to manage lists
-                $this->enforceListPermissions($list);
-
                 // Create the item for the list and element, with additional attributes
                 $item = $this->_getOrCreateItem($list, $element, $postItem);
 
@@ -249,9 +246,6 @@ class ItemsController extends BaseController
                     continue;
                 }
 
-                // Check if we're allowed to manage lists
-                $this->enforceListPermissions($list);
-
                 // Create the item for the list and element, with additional attributes
                 $item = $this->_getOrCreateItem($list, $element, $postItem);
 
@@ -318,9 +312,6 @@ class ItemsController extends BaseController
                     continue;
                 }
 
-                // Check if we're allowed to manage lists
-                $this->enforceListPermissions($list);
-
                 // Create the item for the list and element, with additional attributes
                 $item = $this->_getOrCreateItem($list, $element, $postItem);
 
@@ -382,7 +373,6 @@ class ItemsController extends BaseController
 
             // Check if we're allowed to manage lists
             $this->enforceEnabledList($item->getList());
-            $this->enforceListPermissions($item->getList());
 
             $item->setFieldValues($fields);
             $item->setOptions($options);
@@ -468,8 +458,6 @@ class ItemsController extends BaseController
             'elementId' => $this->request->getParam('elementId'),
             'elementSiteId' => $this->request->getParam('elementSiteId'),
             'newList' => $this->request->getParam('newList', false),
-            'listTitle' => $this->request->getParam('listTitle', null),
-            'listEnabled' => $this->request->getParam('listEnabled', true),
             'fields' => $this->request->getParam('fields', []),
             'options' => $this->request->getParam('options', []),
         ], $urlPayload);
@@ -542,9 +530,6 @@ class ItemsController extends BaseController
                     $list = Wishlist::$plugin->getLists()->getUserList($listParams);
                 }
 
-                $list->title = $postItem['listTitle'] ?? $list->title;
-                $list->enabled = $postItem['listEnabled'] ?? $list->enabled;
-
                 if (!Wishlist::$plugin->getLists()->saveElement($list)) {
                     $lists[] = new ItemError('Unable to save list.', ['list' => $list]);
 
@@ -554,7 +539,6 @@ class ItemsController extends BaseController
 
             // Check if we're allowed to manage lists
             $this->enforceEnabledList($list);
-            $this->enforceListPermissions($list);
 
             $lists[] = $list;
         }

@@ -5,8 +5,6 @@ use verbb\wishlist\Wishlist;
 use verbb\wishlist\elements\ListElement;
 use verbb\wishlist\errors\ItemError;
 use verbb\wishlist\errors\ListError;
-use verbb\wishlist\events\AddLineItemEvent;
-use verbb\wishlist\events\AddToCartEvent;
 use verbb\wishlist\models\Settings;
 
 use Craft;
@@ -14,7 +12,6 @@ use craft\elements\User;
 use craft\helpers\ArrayHelper;
 use craft\helpers\Assets;
 use craft\helpers\Json;
-use craft\helpers\Template;
 use craft\mail\Message;
 use craft\web\View;
 
@@ -29,15 +26,6 @@ use Throwable;
 
 class ListsController extends BaseController
 {
-    // Constants
-    // =========================================================================
-
-    public const EVENT_BEFORE_ADD_TO_CART = 'beforeAddToCart';
-    public const EVENT_AFTER_ADD_TO_CART = 'afterAddToCart';
-    public const EVENT_BEFORE_ADD_LINE_ITEM = 'beforeAddLineItem';
-    public const EVENT_AFTER_ADD_LINE_ITEM = 'afterAddLineItem';
-
-
     // Properties
     // =========================================================================
 
@@ -371,14 +359,6 @@ class ListsController extends BaseController
         // Check to see if we want to add all the items in the list, or just specific ones
         $addingPurchasables = $this->request->getParam('purchasables');
 
-        // Fire a 'beforeAddToCart' event
-        if ($this->hasEventHandlers(self::EVENT_BEFORE_ADD_TO_CART)) {
-            $this->trigger(self::EVENT_BEFORE_ADD_TO_CART, new AddToCartEvent([
-                'cart' => $cart,
-                'list' => $list,
-            ]));
-        }
-
         foreach (ArrayHelper::index($list->getItems(), 'id') as $key => $item) {
             if (is_a($item->getElement(), Purchasable::class)) {
                 $purchasable = $item->getElement();
@@ -418,28 +398,7 @@ class ListsController extends BaseController
                     }
 
                     $lineItem->note = $note;
-
-                    // Fire a 'beforeAddLineItem' event
-                    if ($this->hasEventHandlers(self::EVENT_BEFORE_ADD_LINE_ITEM)) {
-                        $this->trigger(self::EVENT_BEFORE_ADD_LINE_ITEM, new AddLineItemEvent([
-                            'cart' => $cart,
-                            'list' => $list,
-                            'item' => $item,
-                            'lineItem' => $lineItem,
-                        ]));
-                    }
-
                     $cart->addLineItem($lineItem);
-
-                    // Fire a 'afterAddLineItem' event
-                    if ($this->hasEventHandlers(self::EVENT_AFTER_ADD_LINE_ITEM)) {
-                        $this->trigger(self::EVENT_AFTER_ADD_LINE_ITEM, new AddLineItemEvent([
-                            'cart' => $cart,
-                            'list' => $list,
-                            'item' => $item,
-                            'lineItem' => $lineItem,
-                        ]));
-                    }
 
                     // Should we remove it from the list?
                     $removeFromList = $this->request->getParam("purchasables.{$key}.removeFromList", false);
@@ -455,14 +414,6 @@ class ListsController extends BaseController
             return $this->returnError('Unable to add items to cart.', [
                 'list' => $list,
             ]);
-        }
-
-        // Fire a 'afterAddToCart' event
-        if ($this->hasEventHandlers(self::EVENT_AFTER_ADD_TO_CART)) {
-            $this->trigger(self::EVENT_AFTER_ADD_TO_CART, new AddToCartEvent([
-                'cart' => $cart,
-                'list' => $list,
-            ]));
         }
 
         // Should we remove all items from the list after adding?
@@ -624,6 +575,48 @@ class ListsController extends BaseController
         Wishlist::info($message);
 
         return $this->returnSuccess($message);
+    }
+
+
+    // Protected Methods
+    // =========================================================================
+
+    protected function enforceListPermissions(ListElement $list, bool $enforceOwner = true): void
+    {
+        if (!$list->getType()) {
+            Craft::error('Attempting to access a list that doesn’t have a type', __METHOD__);
+            throw new HttpException(404);
+        }
+
+        // If this is a front-end request, ensure that it's the owner of the list making changes
+        if ($enforceOwner) {
+            if (Craft::$app->getRequest()->getIsSiteRequest()) {
+                $currentUser = Craft::$app->getUser()->getIdentity();
+
+                // If an admin, assume they have permission to edit another list
+                if (Craft::$app->getUser()->getIsAdmin()) {
+                    return;
+                }
+
+                // If logged in, easy check
+                if ($currentUser) {
+                    if ($currentUser->id !== $list->userId) {
+                        throw new HttpException(403);
+                    }
+
+                    return;
+                }
+
+                if ($list->sessionId !== Craft::$app->getSession()->get('wishlist_list')) {
+                    // Check if the guests session matches the lists
+                    throw new HttpException(403);
+                }
+
+                return;
+            }
+            
+            $this->requirePermission('wishlist-manageListType:' . $list->getType()->uid);
+        }
     }
 
 
